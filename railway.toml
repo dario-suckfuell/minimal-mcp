@@ -1,5 +1,5 @@
 [deploy]
 # Start the HTTP MCP server (Railway sets $PORT)
-startCommand = "python -m app.server"
+startCommand = "python -m mcp_private_db.main"
 healthcheckPath = "/health"
 restartPolicyType = "ON_FAILURE"
