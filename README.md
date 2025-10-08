@@ -302,9 +302,9 @@ CMD ["python", "-m", "mcp_private_db.main"]
 ## Limitations
 
 - **Read-only**: No document indexing or ingestion capabilities
-- **No Authentication**: No built-in authentication or tenancy
 - **No Web UI**: Command-line and API access only
 - **Single Provider**: Currently supports OpenAI embeddings only
+- **Basic Authentication**: Simple Bearer token authentication (no advanced auth features like OAuth, JWT, etc.)
 
 ## Error Handling
 
