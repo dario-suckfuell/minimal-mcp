@@ -115,11 +115,20 @@ async def root():
     return {
         "message": "MCP Private Database Server",
         "version": "1.0.0",
-        "protocols": {
-            "http_streamable": "/mcp",
-            "sse": "/sse"
+        "endpoints": {
+            "http_streamable": {
+                "path": "/mcp",
+                "method": "POST",
+                "usage": "n8n agents and HTTP Streamable clients"
+            },
+            "sse": {
+                "path": "/sse",
+                "methods": "GET (connect) + POST (send commands)",
+                "usage": "OpenAI Deep Research and SSE clients"
+            }
         },
-        "description": "Use /mcp for HTTP Streamable (n8n) or /sse for Server-Sent Events (OpenAI Deep Research)"
+        "tools": ["search", "fetch"],
+        "description": "Private database search powered by Pinecone vector database"
     }
 
 
@@ -217,6 +226,7 @@ async def mcp_endpoint(
 
 
 # MCP SSE endpoint for OpenAI Deep Research
+@app.get("/sse")
 @app.post("/sse")
 async def mcp_sse_endpoint(
     request: Request,
@@ -225,27 +235,68 @@ async def mcp_sse_endpoint(
 ):
     """
     MCP SSE (Server-Sent Events) endpoint for OpenAI Deep Research.
-    Streams MCP protocol messages using SSE format.
+    Supports both GET (for SSE connection) and POST (for sending commands).
     """
-    # Read the request body before creating the stream
-    try:
-        body = await request.json()
-    except Exception as e:
-        logger.error(f"Failed to parse request body: {e}")
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Invalid JSON in request body"}
+    if request.method == "GET":
+        # For GET requests, establish SSE connection and wait for commands
+        # This is the initial handshake for SSE
+        return StreamingResponse(
+            sse_heartbeat_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+                "Access-Control-Allow-Origin": "*"
+            }
         )
-    
-    return StreamingResponse(
-        sse_event_generator(body, mcp_session_id),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
+    else:
+        # For POST requests, process the MCP command and return SSE response
+        try:
+            body = await request.json()
+        except Exception as e:
+            logger.error(f"Failed to parse request body: {e}")
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Invalid JSON in request body"}
+            )
+        
+        return StreamingResponse(
+            sse_event_generator(body, mcp_session_id),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+                "Access-Control-Allow-Origin": "*"
+            }
+        )
+
+
+async def sse_heartbeat_generator():
+    """Generate heartbeat events for SSE connection (GET requests)."""
+    try:
+        # Send initial connection message
+        init_message = {
+            "type": "connection",
+            "status": "connected",
+            "server": "mcp-private-db",
+            "version": "1.0.0",
+            "protocols": ["mcp"],
+            "message": "Connected to MCP Private Database. Send POST requests to this endpoint to use MCP tools."
         }
-    )
+        yield f"data: {json.dumps(init_message)}\n\n"
+        
+        # Keep connection alive with periodic heartbeats
+        while True:
+            await asyncio.sleep(30)  # Send heartbeat every 30 seconds
+            heartbeat = {"type": "heartbeat", "timestamp": asyncio.get_event_loop().time()}
+            yield f"data: {json.dumps(heartbeat)}\n\n"
+            
+    except asyncio.CancelledError:
+        logger.info("SSE connection closed by client")
+    except Exception as e:
+        logger.error(f"SSE heartbeat error: {e}")
 
 
 async def sse_event_generator(body: Union[Dict, List], session_id: Optional[str]):
