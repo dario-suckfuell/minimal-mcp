@@ -22,7 +22,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
 ]
 dependencies = [
-    "fastmcp>=2.2",
+    "fastmcp>=0.1.0",
     "pinecone>=5.0.0",
     "openai>=1.0.0",
     "pydantic>=2.0.0",
