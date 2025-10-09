@@ -1,8 +1,10 @@
-"""Main MCP server for Private Database with Pinecone backend using HTTP Streamable transport."""
+"""Main MCP server for Private Database with Pinecone backend using HTTP Streamable and SSE transports."""
 
 import logging
 import os
 import uuid
+import json
+import asyncio
 from typing import Any, Dict, Optional, List, Union
 from fastapi import FastAPI, HTTPException, Depends, status, Request, Header
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
@@ -110,7 +112,15 @@ def create_mcp_response(request_id: Optional[Union[str, int]], result: Optional[
 @app.get("/")
 async def root():
     """Root endpoint."""
-    return {"message": "MCP Private Database Server", "version": "1.0.0", "protocol": "mcp-http-streamable"}
+    return {
+        "message": "MCP Private Database Server",
+        "version": "1.0.0",
+        "protocols": {
+            "http_streamable": "/mcp",
+            "sse": "/sse"
+        },
+        "description": "Use /mcp for HTTP Streamable (n8n) or /sse for Server-Sent Events (OpenAI Deep Research)"
+    }
 
 
 @app.get("/health")
@@ -204,6 +214,66 @@ async def mcp_endpoint(
                 error={"code": -32603, "message": "Internal error", "data": str(e)}
             )
         )
+
+
+# MCP SSE endpoint for OpenAI Deep Research
+@app.post("/sse")
+async def mcp_sse_endpoint(
+    request: Request,
+    token: str = Depends(verify_token),
+    mcp_session_id: Optional[str] = Header(None, alias="Mcp-Session-Id")
+):
+    """
+    MCP SSE (Server-Sent Events) endpoint for OpenAI Deep Research.
+    Streams MCP protocol messages using SSE format.
+    """
+    return StreamingResponse(
+        sse_event_generator(request, mcp_session_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+async def sse_event_generator(request: Request, session_id: Optional[str]):
+    """Generate SSE events for MCP protocol."""
+    try:
+        body = await request.json()
+        
+        # Handle single request or batch
+        is_batch = isinstance(body, list)
+        requests = body if is_batch else [body]
+        
+        for req_data in requests:
+            try:
+                mcp_req = MCPRequest(**req_data)
+                response = await handle_mcp_request(mcp_req, session_id)
+                
+                # Format as SSE event
+                event_data = json.dumps(response)
+                yield f"data: {event_data}\n\n"
+                
+            except Exception as e:
+                logger.error(f"Error processing SSE request: {e}")
+                error_response = create_mcp_response(
+                    req_data.get("id"),
+                    error={"code": -32600, "message": "Invalid Request", "data": str(e)}
+                )
+                yield f"data: {json.dumps(error_response)}\n\n"
+        
+        # Send done event
+        yield "event: done\ndata: {}\n\n"
+        
+    except Exception as e:
+        logger.error(f"SSE stream error: {e}")
+        error_response = create_mcp_response(
+            None,
+            error={"code": -32603, "message": "Internal error", "data": str(e)}
+        )
+        yield f"data: {json.dumps(error_response)}\n\n"
 
 
 async def handle_mcp_request(mcp_req: MCPRequest, session_id: Optional[str]) -> Dict:
