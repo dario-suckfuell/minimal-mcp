@@ -23,7 +23,14 @@ class PineconeClient:
     def _initialize_client(self):
         """Initialize the Pinecone client and index."""
         try:
-            from pinecone.grpc import PineconeGRPC as Pinecone
+            # Try the new pinecone package first (v5+)
+            try:
+                from pinecone import Pinecone
+                logger.info("Using Pinecone package (v5+)")
+            except ImportError:
+                # Fall back to gRPC import for older versions
+                from pinecone.grpc import PineconeGRPC as Pinecone
+                logger.info("Using Pinecone gRPC package")
             
             # Initialize Pinecone client
             pc = Pinecone(api_key=settings.PINECONE_API_KEY)
@@ -32,7 +39,8 @@ class PineconeClient:
             self.index = pc.Index(settings.PINECONE_INDEX)
             logger.info(f"Connected to Pinecone index: {settings.PINECONE_INDEX}")
             
-        except ImportError:
+        except ImportError as e:
+            logger.error(f"Import error: {e}")
             raise PineconeError("Pinecone package not installed. Install with: pip install pinecone")
         except Exception as e:
             logger.error(f"Failed to initialize Pinecone client: {e}")
@@ -65,19 +73,32 @@ class PineconeClient:
             logger.info(f"Found {len(matches)} matches from Pinecone")
             
             for match in matches:
-                metadata = match.get("metadata", {})
-                logger.debug(f"Match: id={match['id']}, score={match['score']}, metadata_keys={list(metadata.keys())}")
+                # Handle both dict and object response formats
+                if hasattr(match, 'metadata'):
+                    match_id = match.id
+                    match_score = match.score
+                    metadata = match.metadata or {}
+                else:
+                    match_id = match["id"]
+                    match_score = match["score"]
+                    metadata = match.get("metadata", {})
+                
+                logger.debug(f"Match: id={match_id}, score={match_score}, metadata_keys={list(metadata.keys())}")
                 
                 # Extract text for snippet
                 text_content = extract_text_from_metadata(metadata, settings.metadata_text_keys_list)
                 snippet = create_snippet(text_content) if text_content else None
                 
+                # Handle metadata access for both dict and object
+                title = metadata.get("title") if hasattr(metadata, 'get') else getattr(metadata, 'title', None)
+                source = metadata.get("source") if hasattr(metadata, 'get') else getattr(metadata, 'source', None)
+                
                 result = {
-                    "id": match["id"],
-                    "score": match["score"],
-                    "title": metadata.get("title"),
+                    "id": match_id,
+                    "score": match_score,
+                    "title": title,
                     "snippet": snippet,
-                    "source": metadata.get("source")
+                    "source": source
                 }
                 results.append(result)
             
@@ -108,7 +129,12 @@ class PineconeClient:
             logger.info(f"Fetch response contains {len(vectors)} vectors")
             
             for doc_id, record in vectors.items():
-                metadata = record.get("metadata", {})
+                # Handle both dict and object response formats
+                if hasattr(record, 'metadata'):
+                    metadata = record.metadata or {}
+                else:
+                    metadata = record.get("metadata", {})
+                
                 logger.debug(f"Fetched doc: id={doc_id}, metadata_keys={list(metadata.keys())}")
                 
                 # Extract content from metadata
@@ -121,7 +147,7 @@ class PineconeClient:
                 truncated_content, was_truncated = truncate_content(content, settings.MAX_CONTENT_CHARS)
                 
                 # Add truncation flag to metadata
-                metadata_copy = metadata.copy()
+                metadata_copy = dict(metadata)  # Convert to dict if it's not already
                 metadata_copy["truncated"] = was_truncated
                 
                 obj = {
