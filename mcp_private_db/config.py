@@ -21,8 +21,8 @@ class Settings(BaseModel):
     # Embedding configuration
     ENABLE_EMBEDDING: bool = Field(True, description="Whether to enable text embedding")
     EMBEDDING_PROVIDER: str = Field("openai", description="Embedding provider to use")
-    EMBEDDING_MODEL: str = Field("text-embedding-3-large", description="Embedding model to use")
-    EMBEDDING_DIMENSIONS: int = Field(3072, description="Embedding dimensions")
+    EMBEDDING_MODEL: str = Field("text-embedding-3-small", description="Embedding model to use")
+    EMBEDDING_DIMENSIONS: int = Field(1536, description="Embedding dimensions")
     OPENAI_API_KEY: Optional[str] = Field(None, description="OpenAI API key for embeddings")
     
     # Metadata configuration
@@ -63,8 +63,8 @@ def load_settings() -> Settings:
         MAX_CONTENT_CHARS=int(os.getenv("MAX_CONTENT_CHARS", "50000")),
         ENABLE_EMBEDDING=os.getenv("ENABLE_EMBEDDING", "true").lower() == "true",
         EMBEDDING_PROVIDER=os.getenv("EMBEDDING_PROVIDER", "openai"),
-        EMBEDDING_MODEL=os.getenv("EMBEDDING_MODEL", "text-embedding-3-large"),
-        EMBEDDING_DIMENSIONS=int(os.getenv("EMBEDDING_DIMENSIONS", "3072")),
+        EMBEDDING_MODEL=os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"),
+        EMBEDDING_DIMENSIONS=int(os.getenv("EMBEDDING_DIMENSIONS", "1536")),
         OPENAI_API_KEY=os.getenv("OPENAI_API_KEY"),
         METADATA_TEXT_KEYS=os.getenv("METADATA_TEXT_KEYS", "text,chunk,content"),
         HOST=os.getenv("HOST", "0.0.0.0"),

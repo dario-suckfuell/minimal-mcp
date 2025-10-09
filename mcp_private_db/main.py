@@ -119,6 +119,47 @@ async def health():
     return PlainTextResponse("OK")
 
 
+@app.get("/debug/config")
+async def debug_config(token: str = Depends(verify_token)):
+    """Debug endpoint to verify configuration (requires auth)."""
+    from .pinecone_client import get_pinecone_client
+    
+    try:
+        # Try to get Pinecone client
+        pc = get_pinecone_client()
+        pinecone_status = "Connected"
+        
+        # Try to get index stats
+        try:
+            stats = pc.index.describe_index_stats()
+            index_stats = {
+                "total_vector_count": stats.total_vector_count if hasattr(stats, 'total_vector_count') else stats.get('total_vector_count', 'unknown'),
+                "dimension": stats.dimension if hasattr(stats, 'dimension') else stats.get('dimension', 'unknown'),
+                "namespaces": dict(stats.namespaces) if hasattr(stats, 'namespaces') else stats.get('namespaces', {})
+            }
+        except Exception as e:
+            index_stats = {"error": str(e)}
+    except Exception as e:
+        pinecone_status = f"Error: {str(e)}"
+        index_stats = {}
+    
+    return {
+        "config": {
+            "pinecone_index": settings.PINECONE_INDEX,
+            "namespace": settings.NAMESPACE or "(default)",
+            "embedding_enabled": settings.ENABLE_EMBEDDING,
+            "embedding_provider": settings.EMBEDDING_PROVIDER,
+            "embedding_model": settings.EMBEDDING_MODEL,
+            "embedding_dimensions": settings.EMBEDDING_DIMENSIONS,
+            "default_top_k": settings.DEFAULT_TOP_K,
+            "metadata_text_keys": settings.metadata_text_keys_list,
+        },
+        "pinecone_status": pinecone_status,
+        "index_stats": index_stats,
+        "openai_configured": bool(settings.OPENAI_API_KEY)
+    }
+
+
 # MCP HTTP Streamable endpoint
 @app.post("/mcp")
 async def mcp_endpoint(

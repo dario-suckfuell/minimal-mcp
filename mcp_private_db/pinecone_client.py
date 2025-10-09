@@ -51,14 +51,22 @@ class PineconeClient:
             # Add namespace if configured
             if settings.NAMESPACE:
                 query_params["namespace"] = settings.NAMESPACE
+                logger.info(f"Querying with namespace: {settings.NAMESPACE}")
+            else:
+                logger.info("Querying without namespace (default namespace)")
             
+            logger.info(f"Querying Pinecone with top_k={top_k}, vector_dim={len(vector)}")
             response = self.index.query(**query_params)
+            logger.info(f"Pinecone query response type: {type(response)}")
             
             results = []
             # Handle new Pinecone API response format
             matches = response.matches if hasattr(response, 'matches') else response.get("matches", [])
+            logger.info(f"Found {len(matches)} matches from Pinecone")
+            
             for match in matches:
                 metadata = match.get("metadata", {})
+                logger.debug(f"Match: id={match['id']}, score={match['score']}, metadata_keys={list(metadata.keys())}")
                 
                 # Extract text for snippet
                 text_content = extract_text_from_metadata(metadata, settings.metadata_text_keys_list)
@@ -76,7 +84,7 @@ class PineconeClient:
             return results
             
         except Exception as e:
-            logger.error(f"Pinecone query failed: {e}")
+            logger.error(f"Pinecone query failed: {e}", exc_info=True)
             raise PineconeError(f"Query failed: {e}")
     
     def fetch(self, ids: List[str]) -> List[Dict[str, Any]]:
@@ -87,19 +95,27 @@ class PineconeClient:
             # Add namespace if configured
             if settings.NAMESPACE:
                 fetch_params["namespace"] = settings.NAMESPACE
+                logger.info(f"Fetching with namespace: {settings.NAMESPACE}")
+            else:
+                logger.info("Fetching without namespace (default namespace)")
             
+            logger.info(f"Fetching {len(ids)} documents from Pinecone: {ids}")
             response = self.index.fetch(**fetch_params)
             
             objects = []
             # Handle new Pinecone API response format
             vectors = response.vectors if hasattr(response, 'vectors') else response.get("vectors", {})
+            logger.info(f"Fetch response contains {len(vectors)} vectors")
+            
             for doc_id, record in vectors.items():
                 metadata = record.get("metadata", {})
+                logger.debug(f"Fetched doc: id={doc_id}, metadata_keys={list(metadata.keys())}")
                 
                 # Extract content from metadata
                 content = extract_text_from_metadata(metadata, settings.metadata_text_keys_list)
                 if not content:
                     content = ""
+                    logger.warning(f"No content found for document {doc_id} with metadata keys {list(metadata.keys())}")
                 
                 # Truncate content if needed
                 truncated_content, was_truncated = truncate_content(content, settings.MAX_CONTENT_CHARS)
@@ -118,7 +134,7 @@ class PineconeClient:
             return objects
             
         except Exception as e:
-            logger.error(f"Pinecone fetch failed: {e}")
+            logger.error(f"Pinecone fetch failed: {e}", exc_info=True)
             raise PineconeError(f"Fetch failed: {e}")
 
 
