@@ -227,8 +227,18 @@ async def mcp_sse_endpoint(
     MCP SSE (Server-Sent Events) endpoint for OpenAI Deep Research.
     Streams MCP protocol messages using SSE format.
     """
+    # Read the request body before creating the stream
+    try:
+        body = await request.json()
+    except Exception as e:
+        logger.error(f"Failed to parse request body: {e}")
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Invalid JSON in request body"}
+        )
+    
     return StreamingResponse(
-        sse_event_generator(request, mcp_session_id),
+        sse_event_generator(body, mcp_session_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -238,11 +248,9 @@ async def mcp_sse_endpoint(
     )
 
 
-async def sse_event_generator(request: Request, session_id: Optional[str]):
+async def sse_event_generator(body: Union[Dict, List], session_id: Optional[str]):
     """Generate SSE events for MCP protocol."""
     try:
-        body = await request.json()
-        
         # Handle single request or batch
         is_batch = isinstance(body, list)
         requests = body if is_batch else [body]
